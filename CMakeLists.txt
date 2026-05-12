@@ -42,8 +42,6 @@ add_executable(MprisDemo
 
 set_source_files_properties(mpris_test/player.cpp PROPERTIES SKIP_AUTOMOC ON)
 
-add_executable(test
-    mpris_test/player.cpp)
 
 target_link_libraries(MprisDemo
     PRIVATE
@@ -54,11 +52,4 @@ target_link_libraries(MprisDemo
         Qt6::WaylandCompositor
         LayerShellQt::Interface
         ${X11_LIBRARIES}
-)
-
-target_link_libraries(test
-    PRIVATE
-        Qt6::Core
-        Qt6::Widgets
-        Qt6::DBus
 )
