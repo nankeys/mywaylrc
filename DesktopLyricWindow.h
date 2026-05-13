@@ -19,6 +19,8 @@ public:
     explicit DesktopLyricWindow(QWidget *parent = nullptr);
 
     void setLyric(const QString &text);
+    void showForLyric();
+    void hideForNoLyric();
     void setProgress(double progress); // 0.0 ~ 1.0
     void setLocked(bool locked);
     bool isLocked() const;
@@ -54,6 +56,7 @@ private slots:
     void onScrollTimeout(); // 滚动定时器槽
 
 private:
+    void ensureVisibleOnScreen();
     QString m_text;
     int m_scrollOffset = 0;
     QTimer m_scrollTimer;

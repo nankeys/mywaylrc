@@ -80,15 +80,6 @@ void DesktopLyricWindow::setLyric(const QString &text)
     m_text = text;
     m_scrollOffset = 0;
 
-    if (m_text.trimmed().isEmpty()) {
-        hide();
-        update();
-        return;
-    }
-
-    if (!isVisible())
-        show();
-
     // m_scrollOffset = 0;
 
     // // 计算是否需要滚动
@@ -102,6 +93,21 @@ void DesktopLyricWindow::setLyric(const QString &text)
     // }
 
     update();
+}
+
+void DesktopLyricWindow::showForLyric()
+{
+    setWindowState(windowState() & ~Qt::WindowMinimized);
+    ensureVisibleOnScreen();
+    show();
+    raise();
+    update();
+    repaint();
+}
+
+void DesktopLyricWindow::hideForNoLyric()
+{
+    hide();
 }
 
 void DesktopLyricWindow::setProgress(double progress)
@@ -213,6 +219,31 @@ QFont DesktopLyricWindow::lyricFont() const
     return m_lyricFont;
 }
 
+void DesktopLyricWindow::ensureVisibleOnScreen()
+{
+    QScreen *currentScreen = screen();
+    if (!currentScreen)
+        currentScreen = QGuiApplication::primaryScreen();
+
+    if (!currentScreen)
+        return;
+
+    const QRect available = currentScreen->availableGeometry();
+    const QRect rect = frameGeometry();
+
+    const bool outOfHorizontalBounds =
+        rect.right() < available.left() || rect.left() > available.right();
+    const bool outOfVerticalBounds =
+        rect.bottom() < available.top() || rect.top() > available.bottom();
+
+    if (!outOfHorizontalBounds && !outOfVerticalBounds)
+        return;
+
+    const int targetX = available.left() + (available.width() - width()) / 2;
+    const int targetY = available.top() + qMax(40, available.height() / 12);
+    move(targetX, targetY);
+}
+
 void DesktopLyricWindow::loadSettings()
 {
     QSettings settings("LyricPhase", "DesktopLyric");
@@ -278,6 +309,7 @@ void DesktopLyricWindow::loadSettings()
     if (settings.contains("window/size"))
         resize(settings.value("window/size").toSize());
 
+    ensureVisibleOnScreen();
     update();
 }
 

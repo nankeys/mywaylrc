@@ -40,14 +40,24 @@ int main(int argc, char *argv[])
     // 当前正在显示的歌曲标识
     QString currentSong;
     QString lrcPath;
+    bool startupLyricLoaded = false;
+    auto firstDisplayLine = [&parser]() -> QString {
+        for (const auto &line : parser.lines()) {
+            if (!line.text.trimmed().isEmpty())
+                return line.text;
+        }
+        return QString();
+    };
 
     // 封装：只在切歌时弹出一次
     auto reloadLyricOnce = [&]() {
         QString title = player.title();
         QString artist = player.artist();
 
-        if (title.isEmpty())
+        if (title.isEmpty()) {
+            qDebug() << "skip lyric reload: empty title";
             return;
+        }
 
         QString songId = title + "|" + artist;
 
@@ -65,29 +75,48 @@ int main(int argc, char *argv[])
         if (!lrcPath.isEmpty() && lrcPath != QString()) {
             if (parser.loadFromFile(lrcPath)) {
                 qDebug() << "load lyric ok:" << parser.lines().size();
-                if (!parser.lines().isEmpty())
-                    lyricWindow.setLyric(parser.lines().first().text);
-                else
+                if (!parser.lines().isEmpty()) {
+                    lyricWindow.setLyric(firstDisplayLine());
+                    lyricWindow.showForLyric();
+                    startupLyricLoaded = true;
+                } else {
                     lyricWindow.setLyric("");
+                    lyricWindow.hideForNoLyric();
+                }
             } else {
                 qDebug() << "load lyric failed";
                 lyricWindow.setLyric("");
+                lyricWindow.hideForNoLyric();
             }
         } else {
             parser.loadFromFile(""); // 清空歌词
             lyricWindow.setLyric("");
             lyricWindow.setProgress(0);
+            lyricWindow.hideForNoLyric();
         }
     };
 
-    // 启动时检查播放器状态（防止程序启动时歌曲已经在播放）
-    qint64 posMs = player.smoothPositionUs() / 1000;
-    if (posMs > 0.08) {
-        QTimer::singleShot(500, reloadLyricOnce);
+    // 启动时主动重试几次，覆盖“程序在歌曲播放中途启动”的场景。
+    for (int i = 0; i < 8; ++i) {
+        QTimer::singleShot(400 + i * 500, [&]() {
+            if (startupLyricLoaded)
+                return;
+
+            player.refreshPlayers();
+            reloadLyricOnce();
+        });
     }
 
     // 连接 MPRIS metadataChanged 信号
     QObject::connect(&player, &MprisPlayer::metadataChanged, reloadLyricOnce);
+    QObject::connect(&player, &MprisPlayer::playerChanged, [&]() {
+        startupLyricLoaded = false;
+        reloadLyricOnce();
+    });
+    QObject::connect(&player, &MprisPlayer::playbackStatusChanged, [&](const QString &status) {
+        if (status == "Playing")
+            reloadLyricOnce();
+    });
 
     // 系统托盘
     LyricTray tray(&lyricWindow, &finder, &parser, &player);
@@ -100,11 +129,17 @@ int main(int argc, char *argv[])
         qint64 posMs = player.smoothPositionUs() / 1000;
         int lineIndex = parser.currentLineIndex(posMs);
 
-        if (lineIndex < 0) {
-            if (parser.lines().isEmpty())
-                lyricWindow.setLyric("");
+        if (parser.lines().isEmpty()) {
+            lyricWindow.hideForNoLyric();
+            lyricWindow.setLyric("");
             return;
         }
+
+        if (!lyricWindow.isVisible())
+            lyricWindow.showForLyric();
+
+        if (lineIndex < 0)
+            return;
 
         const auto &line = parser.lines()[lineIndex];
         lyricWindow.setLyric(line.text);

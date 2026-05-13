@@ -67,12 +67,22 @@ void LyricTray::createMenu()
         if (!filePath.isEmpty()) {
             qDebug() << "User selected lyric file:" << filePath;
             if (m_parser->loadFromFile(filePath)) {
+                QString firstLine;
+                for (const auto &line : m_parser->lines()) {
+                    if (!line.text.trimmed().isEmpty()) {
+                        firstLine = line.text;
+                        break;
+                    }
+                }
+
                 m_lyricWindow->setLyric(
-                    m_parser->lines().isEmpty() ? "" : m_parser->lines().first().text
+                    firstLine
                 );
+                m_lyricWindow->showForLyric();
                 m_currentSong = "MANUAL|" + filePath;
             } else {
                 m_lyricWindow->setLyric("");
+                m_lyricWindow->hideForNoLyric();
             }
         }
     });
@@ -95,15 +105,25 @@ void LyricTray::createMenu()
         QString lrcPath = m_finder->findLyric(title, artist, nullptr);
         if (!lrcPath.isEmpty()) {
             if (m_parser->loadFromFile(lrcPath)) {
-                QString firstLine = m_parser->lines().isEmpty() ? "" : m_parser->lines().first().text;
+                QString firstLine;
+                for (const auto &line : m_parser->lines()) {
+                    if (!line.text.trimmed().isEmpty()) {
+                        firstLine = line.text;
+                        break;
+                    }
+                }
+
                 m_lyricWindow->setLyric(firstLine);
+                m_lyricWindow->showForLyric();
                 qDebug() << "Reload lyric from:" << lrcPath;
             } else {
                 m_lyricWindow->setLyric("");
+                m_lyricWindow->hideForNoLyric();
             }
         } else {
             m_parser->loadFromFile("");
             m_lyricWindow->setLyric("");
+            m_lyricWindow->hideForNoLyric();
         }
     });
 
