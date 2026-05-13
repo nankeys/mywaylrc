@@ -3,6 +3,7 @@
 #include "LyricFinder.h"
 #include "LyricParser.h"
 #include "MprisPlayer.h"
+#include "LyricsDirectoryDialog.h"
 #include "LyricsStyleDialog.h"
 
 #include <QSystemTrayIcon>
@@ -44,6 +45,16 @@ void LyricTray::createMenu()
         m_lockAction->setText(checked ? "解锁歌词" : "锁定歌词");
     });
 
+    m_menu->addAction("歌词目录设置...", [this]() {
+        LyricsDirectoryDialog dlg(m_finder->searchDirs());
+
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        m_finder->setSearchDirs(dlg.directories());
+        m_finder->saveSettings();
+    });
+
     // 浏览歌词
     m_menu->addAction("浏览歌词", [this](){
         QString filePath = QFileDialog::getOpenFileName(
@@ -55,11 +66,14 @@ void LyricTray::createMenu()
 
         if (!filePath.isEmpty()) {
             qDebug() << "User selected lyric file:" << filePath;
-            m_parser->loadFromFile(filePath);
-            m_lyricWindow->setLyric(
-                m_parser->lines().isEmpty() ? "" : m_parser->lines().first().text
-            );
-            m_currentSong = "MANUAL|" + filePath;
+            if (m_parser->loadFromFile(filePath)) {
+                m_lyricWindow->setLyric(
+                    m_parser->lines().isEmpty() ? "" : m_parser->lines().first().text
+                );
+                m_currentSong = "MANUAL|" + filePath;
+            } else {
+                m_lyricWindow->setLyric("");
+            }
         }
     });
 
@@ -84,7 +98,12 @@ void LyricTray::createMenu()
                 QString firstLine = m_parser->lines().isEmpty() ? "" : m_parser->lines().first().text;
                 m_lyricWindow->setLyric(firstLine);
                 qDebug() << "Reload lyric from:" << lrcPath;
+            } else {
+                m_lyricWindow->setLyric("");
             }
+        } else {
+            m_parser->loadFromFile("");
+            m_lyricWindow->setLyric("");
         }
     });
 

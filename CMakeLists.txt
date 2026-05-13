@@ -27,6 +27,9 @@ add_executable(MprisDemo
     LyricSelectionDialog.cpp
     LyricSelectionDialog.h
 
+    LyricsDirectoryDialog.cpp
+    LyricsDirectoryDialog.h
+
     DesktopLyricWindow.cpp
     DesktopLyricWindow.h
 

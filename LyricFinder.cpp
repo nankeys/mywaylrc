@@ -2,14 +2,50 @@
 #include "LyricSelectionDialog.h"
 #include <QDir>
 #include <QFileInfo>
-#include <QRegularExpression>
+#include <QSettings>
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QDebug>
+#include <QRegularExpression>
 
 void LyricFinder::setSearchDirs(const QStringList &dirs)
 {
     m_dirs = dirs;
+}
+
+QStringList LyricFinder::searchDirs() const
+{
+    return m_dirs;
+}
+
+void LyricFinder::loadSettings()
+{
+    QSettings settings("LyricPhase", "DesktopLyric");
+    const QStringList dirs = settings.value("lyrics/searchDirs").toStringList();
+
+    if (dirs.isEmpty()) {
+        m_dirs = defaultSearchDirs();
+        saveSettings();
+        return;
+    }
+
+    m_dirs = dirs;
+}
+
+void LyricFinder::saveSettings() const
+{
+    QSettings settings("LyricPhase", "DesktopLyric");
+    settings.setValue("lyrics/searchDirs", m_dirs);
+    settings.sync();
+}
+
+QStringList LyricFinder::defaultSearchDirs() const
+{
+    return {
+        "/mnt/zspace/myLyrics",
+        QDir::home().filePath(".lyrics"),
+        QDir::home().filePath(".local/share/lyrics")
+    };
 }
 
 QString LyricFinder::normalize(const QString &s) const
@@ -23,6 +59,38 @@ QString LyricFinder::normalize(const QString &s) const
     r.remove(QRegularExpression(R"([^\p{L}\p{N}\s])"));
     r.replace(QRegularExpression(R"(\s+)"), " ");
     return r.trimmed();
+}
+
+QStringList LyricFinder::splitWords(const QString &s) const
+{
+    return normalize(s).split(' ', Qt::SkipEmptyParts);
+}
+
+bool LyricFinder::containsAllWords(const QString &text,
+                                   const QStringList &words) const
+{
+    if (words.isEmpty())
+        return false;
+
+    for (const QString &word : words) {
+        if (word.length() >= 2 && !text.contains(word))
+            return false;
+    }
+
+    return true;
+}
+
+int LyricFinder::countMatchedWords(const QString &text,
+                                   const QStringList &words) const
+{
+    int count = 0;
+
+    for (const QString &word : words) {
+        if (word.length() >= 2 && text.contains(word))
+            ++count;
+    }
+
+    return count;
 }
 
 bool LyricFinder::isExactTitleArtistMatch(const QString &fileName,
@@ -49,55 +117,86 @@ int LyricFinder::scoreFile(const QString &fileName,
     QString f = normalize(fileName);
     QString t = normalize(title);
     QString a = normalize(artist);
+    const QStringList titleWords = splitWords(title);
+    const QStringList artistWords = splitWords(artist);
 
     int score = 0;
 
     if (t.isEmpty())
         return 0;
 
-    // 最高优先级：title - artist / artist - title
-    if (!a.isEmpty()) {
-        QString titleArtist = normalize(t + " " + a);
-        QString artistTitle = normalize(a + " " + t);
+    const bool hasArtist = !a.isEmpty();
+    const QString titleArtist = hasArtist ? normalize(t + " " + a) : QString();
+    const QString artistTitle = hasArtist ? normalize(a + " " + t) : QString();
+    const bool titleExact = (f == t);
+    const bool titleContains = f.contains(t);
+    const bool titleStarts = f.startsWith(t);
+    const bool artistContains = hasArtist && f.contains(a);
+    const bool artistStarts = hasArtist && f.startsWith(a);
+    const bool allTitleWordsMatched = containsAllWords(f, titleWords);
+    const bool allArtistWordsMatched = hasArtist && containsAllWords(f, artistWords);
+    const int matchedTitleWords = countMatchedWords(f, titleWords);
+    const int matchedArtistWords = hasArtist ? countMatchedWords(f, artistWords) : 0;
 
+    // 最高优先级：title - artist / artist - title
+    if (hasArtist) {
         if (f == titleArtist || f == artistTitle)
-            return 10000;
+            return 20000;
+
+        if (f.contains(titleArtist) || f.contains(artistTitle))
+            score += 10000;
+
+        if (allTitleWordsMatched && allArtistWordsMatched)
+            score += 4500;
+
+        if (titleContains && artistContains)
+            score += 2200;
     }
 
     // title 完全匹配
-    if (f == t)
-        score += 500;
+    if (titleExact)
+        score += 900;
 
     // 文件名包含 title
-    if (f.contains(t))
-        score += 300;
+    if (titleContains)
+        score += 420;
 
     // 文件名以 title 开头
-    if (f.startsWith(t))
-        score += 120;
+    if (titleStarts)
+        score += 180;
 
-    // artist 次级匹配
-    if (!a.isEmpty()) {
-        if (f.contains(a))
-            score += 120;
+    // artist 次级匹配，但和 title 组合时权重更高
+    if (hasArtist) {
+        if (artistContains)
+            score += 280;
 
-        if (f.startsWith(a))
-            score += 60;
+        if (artistStarts)
+            score += 100;
     }
 
     // title 单词匹配
-    const QStringList titleWords = t.split(' ', Qt::SkipEmptyParts);
-    for (const QString &w : titleWords) {
-        if (w.length() >= 2 && f.contains(w))
-            score += 15;
-    }
+    score += matchedTitleWords * 25;
 
     // artist 单词匹配，权重低一点
-    const QStringList artistWords = a.split(' ', Qt::SkipEmptyParts);
-    for (const QString &w : artistWords) {
-        if (w.length() >= 2 && f.contains(w))
-            score += 8;
+    score += matchedArtistWords * 16;
+
+    if (allTitleWordsMatched)
+        score += 140;
+
+    if (hasArtist && allArtistWordsMatched)
+        score += 120;
+
+    // 有 artist 信息时，优先 title + artist 的组合；
+    // 仅命中 title 的文件保留为兜底，但明显降权。
+    if (hasArtist && !artistContains && matchedArtistWords == 0) {
+        if (!titleExact)
+            score -= 320;
+        else
+            score -= 120;
     }
+
+    if (hasArtist && matchedArtistWords > 0 && matchedTitleWords == 0)
+        score -= 200;
 
     return score;
 }

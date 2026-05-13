@@ -78,6 +78,17 @@ void DesktopLyricWindow::setLyric(const QString &text)
         return;
 
     m_text = text;
+    m_scrollOffset = 0;
+
+    if (m_text.trimmed().isEmpty()) {
+        hide();
+        update();
+        return;
+    }
+
+    if (!isVisible())
+        show();
+
     // m_scrollOffset = 0;
 
     // // 计算是否需要滚动
